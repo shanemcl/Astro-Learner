@@ -3,13 +3,14 @@ using UnityEngine.Networking;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using Newtonsoft.Json;
 
 public class CanvasDataSyncManager : MonoBehaviour
 {
     // Canvas API configuration
-    private const string BASE_URL = "https://fsu.instructure.com";
-    private const string API_KEY = "YOUR_API_KEY_HERE"; //ask me if you need help setting this instance up with api key,course id, and user id, for testing and I can help (probs takes 5 mins)
+    private const string BASE_URL = "https://YOUR_INSTITUTION.instructure.com";
+    private const string API_KEY = "YOUR_API_KEY_HERE";
     private const string COURSE_ID = "YOUR_COURSE_ID_HERE";
     private const string USER_ID = "YOUR_USER_ID_HERE";
 
@@ -17,6 +18,9 @@ public class CanvasDataSyncManager : MonoBehaviour
     public float syncInterval = 300f; // 5 minutes
     public int maxRetries = 3;
     public float retryDelay = 5f;
+
+    // Offline data
+    private const string OFFLINE_DATA_FILENAME = "canvas_offline_data.json";
 
     private CanvasData gameState = new CanvasData();
 
@@ -99,23 +103,35 @@ public class CanvasDataSyncManager : MonoBehaviour
         Debug.Log($"Course ID: {COURSE_ID}");
         Debug.Log($"User ID: {USER_ID}");
 
-        yield return StartCoroutine(FetchAssignments());
-        yield return StartCoroutine(FetchModules());
-        yield return StartCoroutine(FetchQuizzes());
-        yield return StartCoroutine(FetchGrades());
+        if (CheckInternetConnection())
+        {
+            CanvasData updatedGameState = new CanvasData();
 
-        Debug.Log("Canvas Data Sync Completed");
+            yield return StartCoroutine(FetchAssignments(updatedGameState));
+            yield return StartCoroutine(FetchModules(updatedGameState));
+            yield return StartCoroutine(FetchQuizzes(updatedGameState));
+            yield return StartCoroutine(FetchGrades(updatedGameState));
+
+            gameState = updatedGameState;
+            SaveOfflineData(gameState);
+            Debug.Log("Canvas Data Sync Completed and Saved Offline");
+        }
+        else
+        {
+            Debug.Log("No internet connection. Loading offline data.");
+            LoadOfflineData();
+        }
     }
 
-    private IEnumerator FetchAssignments()
+    private IEnumerator FetchAssignments(CanvasData updatedGameState)
     {
         Debug.Log("\nFetching Assignments:");
         string url = $"{BASE_URL}/api/v1/courses/{COURSE_ID}/assignments";
-        yield return StartCoroutine(FetchData<List<Assignment>>(url, (assignments) =>
+        yield return StartCoroutine(FetchDataWithRetry<List<Assignment>>(url, (assignments) =>
         {
             if (assignments != null)
             {
-                gameState.assignments = assignments;
+                updatedGameState.assignments = assignments;
                 foreach (var assignment in assignments)
                 {
                     Debug.Log($"- {assignment.name} (ID: {assignment.id})");
@@ -128,15 +144,15 @@ public class CanvasDataSyncManager : MonoBehaviour
         }));
     }
 
-    private IEnumerator FetchModules()
+    private IEnumerator FetchModules(CanvasData updatedGameState)
     {
         Debug.Log("\nFetching Modules:");
         string url = $"{BASE_URL}/api/v1/courses/{COURSE_ID}/modules?include[]=items";
-        yield return StartCoroutine(FetchData<List<Module>>(url, (modules) =>
+        yield return StartCoroutine(FetchDataWithRetry<List<Module>>(url, (modules) =>
         {
             if (modules != null)
             {
-                gameState.modules = modules;
+                updatedGameState.modules = modules;
                 foreach (var module in modules)
                 {
                     Debug.Log($"- {module.name} (ID: {module.id})");
@@ -153,15 +169,15 @@ public class CanvasDataSyncManager : MonoBehaviour
         }));
     }
 
-    private IEnumerator FetchQuizzes()
+    private IEnumerator FetchQuizzes(CanvasData updatedGameState)
     {
         Debug.Log("\nFetching Quizzes:");
         string url = $"{BASE_URL}/api/v1/courses/{COURSE_ID}/quizzes";
-        yield return StartCoroutine(FetchData<List<Quiz>>(url, (quizzes) =>
+        yield return StartCoroutine(FetchDataWithRetry<List<Quiz>>(url, (quizzes) =>
         {
             if (quizzes != null)
             {
-                gameState.quizzes = quizzes;
+                updatedGameState.quizzes = quizzes;
                 foreach (var quiz in quizzes)
                 {
                     Debug.Log($"- {quiz.title} (ID: {quiz.id})");
@@ -174,19 +190,19 @@ public class CanvasDataSyncManager : MonoBehaviour
         }));
     }
 
-    private IEnumerator FetchGrades()
+    private IEnumerator FetchGrades(CanvasData updatedGameState)
     {
         Debug.Log("\nFetching Grades:");
         string url = $"{BASE_URL}/api/v1/courses/{COURSE_ID}/students/submissions?student_ids[]={USER_ID}&include[]=assignment";
-        yield return StartCoroutine(FetchData<List<dynamic>>(url, (submissions) =>
+        yield return StartCoroutine(FetchDataWithRetry<List<dynamic>>(url, (submissions) =>
         {
             if (submissions != null)
             {
-                gameState.grades.Clear();
+                updatedGameState.grades = new Dictionary<int, Grade>();
                 foreach (var submission in submissions)
                 {
                     int assignmentId = submission.assignment_id;
-                    gameState.grades[assignmentId] = new Grade
+                    updatedGameState.grades[assignmentId] = new Grade
                     {
                         score = submission.score,
                         grade = submission.grade,
@@ -205,7 +221,41 @@ public class CanvasDataSyncManager : MonoBehaviour
         }));
     }
 
-    private IEnumerator FetchData<T>(string url, Action<T> callback)
+    private IEnumerator FetchDataWithRetry<T>(string url, Action<T> callback)
+    {
+        int retries = 0;
+        bool success = false;
+
+        while (!success && retries < maxRetries)
+        {
+            yield return StartCoroutine(FetchData<T>(url, (result, error) =>
+            {
+                if (string.IsNullOrEmpty(error))
+                {
+                    callback(result);
+                    success = true;
+                }
+                else
+                {
+                    Debug.LogWarning($"Attempt {retries + 1} failed: {error}");
+                    retries++;
+                }
+            }));
+
+            if (!success && retries < maxRetries)
+            {
+                yield return new WaitForSeconds(retryDelay);
+            }
+        }
+
+        if (!success)
+        {
+            Debug.LogError($"Failed to fetch data after {maxRetries} attempts.");
+            callback(default);
+        }
+    }
+
+    private IEnumerator FetchData<T>(string url, Action<T, string> callback)
     {
         using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
         {
@@ -220,14 +270,41 @@ public class CanvasDataSyncManager : MonoBehaviour
             {
                 string jsonResult = webRequest.downloadHandler.text;
                 T result = JsonConvert.DeserializeObject<T>(jsonResult);
-                callback(result);
+                callback(result, null);
             }
             else
             {
                 Debug.LogError($"Error fetching data from {url}: {webRequest.error}");
-                Debug.LogError($"Response content: {webRequest.downloadHandler.text}");
-                callback(default);
+                callback(default, webRequest.error);
             }
+        }
+    }
+
+    private bool CheckInternetConnection()
+    {
+        return Application.internetReachability != NetworkReachability.NotReachable;
+    }
+
+    private void SaveOfflineData(CanvasData data)
+    {
+        string json = JsonConvert.SerializeObject(data);
+        string path = Path.Combine(Application.persistentDataPath, OFFLINE_DATA_FILENAME);
+        File.WriteAllText(path, json);
+        Debug.Log("Offline data saved.");
+    }
+
+    private void LoadOfflineData()
+    {
+        string path = Path.Combine(Application.persistentDataPath, OFFLINE_DATA_FILENAME);
+        if (File.Exists(path))
+        {
+            string json = File.ReadAllText(path);
+            gameState = JsonConvert.DeserializeObject<CanvasData>(json);
+            Debug.Log("Offline data loaded.");
+        }
+        else
+        {
+            Debug.LogWarning("No offline data available.");
         }
     }
 
@@ -239,5 +316,10 @@ public class CanvasDataSyncManager : MonoBehaviour
     public void ForceSyncNow()
     {
         StartCoroutine(SyncAllData());
+    }
+
+    public bool IsOffline()
+    {
+        return !CheckInternetConnection();
     }
 }
