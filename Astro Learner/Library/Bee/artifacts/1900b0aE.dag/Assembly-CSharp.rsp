@@ -116,6 +116,7 @@
 -define:ENABLE_TERRAIN
 -define:ENABLE_TILEMAP
 -define:ENABLE_TIMELINE
+-define:ENABLE_INPUT_SYSTEM
 -define:ENABLE_LEGACY_INPUT_MANAGER
 -define:TEXTCORE_FONT_ENGINE_1_5_OR_NEWER
 -define:CSHARP_7_OR_LATER
@@ -349,6 +350,8 @@
 -r:"Library/Bee/artifacts/1900b0aE.dag/Unity.Burst.Editor.ref.dll"
 -r:"Library/Bee/artifacts/1900b0aE.dag/Unity.Burst.ref.dll"
 -r:"Library/Bee/artifacts/1900b0aE.dag/Unity.Collections.ref.dll"
+-r:"Library/Bee/artifacts/1900b0aE.dag/Unity.InputSystem.ForUI.ref.dll"
+-r:"Library/Bee/artifacts/1900b0aE.dag/Unity.InputSystem.ref.dll"
 -r:"Library/Bee/artifacts/1900b0aE.dag/Unity.InternalAPIEditorBridge.001.ref.dll"
 -r:"Library/Bee/artifacts/1900b0aE.dag/Unity.InternalAPIEngineBridge.001.ref.dll"
 -r:"Library/Bee/artifacts/1900b0aE.dag/Unity.Mathematics.Editor.ref.dll"
@@ -375,10 +378,15 @@
 "Assets/Scripts/MouseIndicator.cs"
 "Assets/Scripts/ParallaxScrolling.cs"
 "Assets/Scripts/PlanetUIEffects.cs"
+"Assets/Scripts/PlayerControls.cs"
 "Assets/Scripts/RandomizedBackgroundGlow.cs"
 "Assets/Scripts/SceneLoader.cs"
+"Assets/Scripts/ShipAimCursor.cs"
+"Assets/Scripts/ShipCustomizationManager.cs"
+"Assets/Scripts/ShipPart.cs"
+"Assets/Scripts/ShipPartButton.cs"
 "Assets/Scripts/ShipSelectionScreenFlyUp.cs"
-"Assets/Scripts/ShipSmoothMovement.cs"
+"Assets/Scripts/ShipSmoothMovement1.cs"
 -langversion:9.0
 /deterministic
 /optimize+
