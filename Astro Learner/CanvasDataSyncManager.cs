@@ -240,7 +240,12 @@ public class CanvasDataSyncManager : MonoBehaviour
         {
             Debug.Log("Failed to fetch grades.");
         }
+        
     }));
+if (CanvasTokenTracker.Instance != null)
+    {
+        CanvasTokenTracker.Instance.CheckForNewCompletions();
+    }
 }
 
     private IEnumerator FetchDataWithRetry<T>(string url, Action<T> callback)
