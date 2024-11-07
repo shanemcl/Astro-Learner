@@ -191,17 +191,30 @@ public class CanvasDataSyncManager : MonoBehaviour
     }
 
     private IEnumerator FetchGrades(CanvasData updatedGameState)
+{
+    Debug.Log("\nFetching Grades:");
+    string url = $"{BASE_URL}/api/v1/courses/{COURSE_ID}/students/submissions?" +
+                 $"student_ids[]={USER_ID}" +
+                 "&include[]=assignment" +
+                 "&include[]=submission" +
+                 "&include[]=total_scores" +
+                 "&order=graded_at" +
+                 "&per_page=100";
+
+    yield return StartCoroutine(FetchDataWithRetry<List<dynamic>>(url, (submissions) =>
     {
-        Debug.Log("\nFetching Grades:");
-        string url = $"{BASE_URL}/api/v1/courses/{COURSE_ID}/students/submissions?student_ids[]={USER_ID}&include[]=assignment";
-        yield return StartCoroutine(FetchDataWithRetry<List<dynamic>>(url, (submissions) =>
+        if (submissions != null)
         {
-            if (submissions != null)
+            updatedGameState.grades = new Dictionary<int, Grade>();
+            Debug.Log($"Found {submissions.Count} submissions");
+
+            foreach (var submission in submissions)
             {
-                updatedGameState.grades = new Dictionary<int, Grade>();
-                foreach (var submission in submissions)
+                try 
                 {
                     int assignmentId = submission.assignment_id;
+                    string assignmentName = submission.assignment.name;
+                    
                     updatedGameState.grades[assignmentId] = new Grade
                     {
                         score = submission.score,
@@ -211,15 +224,24 @@ public class CanvasDataSyncManager : MonoBehaviour
                         workflow_state = submission.workflow_state,
                         late_policy_status = submission.late_policy_status
                     };
-                    Debug.Log($"- {submission.assignment.name}: Score: {submission.score}, Grade: {submission.grade}");
+
+                    Debug.Log($"- {assignmentName}:");
+                    Debug.Log($"    Score: {submission.score}");
+                    Debug.Log($"    Grade: {submission.grade}");
+                    Debug.Log($"    Status: {submission.workflow_state}");
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"Error processing submission: {e.Message}");
                 }
             }
-            else
-            {
-                Debug.Log("Failed to fetch grades.");
-            }
-        }));
-    }
+        }
+        else
+        {
+            Debug.Log("Failed to fetch grades.");
+        }
+    }));
+}
 
     private IEnumerator FetchDataWithRetry<T>(string url, Action<T> callback)
     {
